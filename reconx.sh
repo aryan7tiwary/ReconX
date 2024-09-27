@@ -16,24 +16,24 @@ display_names() {
     echo "@aryan7tiwary"
 }
 
-
 # Target IP or Domain
 TARGET=$1
 
 if [ -z "$TARGET" ]; then
-  echo "Usage: $0 <target-ip-or-domain>"
-  exit 1
+    echo "Usage: $0 <target-ip-or-domain>"
+    exit 1
 fi
 
 echo "Starting initial penetration testing on $TARGET"
 
-
 # Open Port Scan
 nmap_open_port() {
     echo "Finding Open Ports..."
-    nmap -p- --min-rate 10000 "$TARGET" | tee open_ports.txt
+    nmap -p- --min-rate 10000 "$TARGET" | tee open_ports.txt || {
+        echo "Nmap scan failed. Please ensure that Nmap is installed and try again."
+        exit 1
+    }
 }
-
 
 service_scan() {
     echo "Do you want to perform a service scan? (yes/no)"
@@ -45,41 +45,48 @@ service_scan() {
 
         if [[ "$ports" == "all" ]]; then
             # Read open ports from the file and scan
-            ports_to_scan=$(< ./open_ports.txt grep "open" | awk -F'/' '{print $1}' | paste -sd ',')
+            ports_to_scan=$(grep "open" open_ports.txt | awk -F'/' '{print $1}' | paste -sd ',')
             echo "Scanning all open ports: $ports_to_scan"
-            nmap -sV -sV -p"$ports_to_scan" "$TARGET"
+            nmap -sV -p"$ports_to_scan" "$TARGET" || {
+                echo "Nmap service scan failed."
+                exit 1
+            }
         else
             # Use the user-provided port numbers for the scan
             echo "Scanning specified ports: $ports"
-            nmap -sV -p"$ports" "$TARGET"
+            nmap -sV -p"$ports" "$TARGET" || {
+                echo "Nmap service scan failed."
+                exit 1
+            }
         fi
     else
         echo "Service scan canceled."
     fi
 }
 
-
 # Exporting domain name
 domain_scan() {
     domain_name=$(whatweb "$TARGET" --no-error | sed -n 's|.*http[s]\?://\([a-zA-Z0-9.-]\+\).*|\1|p' | uniq)
-    echo "Domain name found: ""$domain_name"""
+    
+    if [ -z "$domain_name" ]; then
+        echo "No domain name found."
+        return
+    fi
 
-    echo "Do you want to add domain to the host file? (yes/no)"
+    echo "Domain name found: $domain_name"
+
+    echo "Do you want to add the domain to the hosts file? (yes/no)"
     read -r answer
     if [ "$answer" == "yes" ]; then
-        sudo echo "$TARGET     $domain_name" | tee -a /etc/hosts
+        sudo bash -c "echo '$TARGET     $domain_name' >> /etc/hosts"
+        echo "Domain added to /etc/hosts."
     else
-        echo "Not writing host file."
+        echo "Not writing to the hosts file."
     fi
 }
 
 display_names
 check_sudo
+nmap_open_port
+service_scan
 domain_scan
-
-
-
-
-
-
-
