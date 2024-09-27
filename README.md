@@ -69,5 +69,5 @@ This script is released under the MIT License. Feel free to modify and distribut
 
 ## Author
 
-**Aryan Tiwary**  
+**Aryan**  
 [@aryan7tiwary](https://twitter.com/aryan7tiwary)
