@@ -26,6 +26,15 @@ fi
 
 echo "Starting initial penetration testing on $TARGET"
 
+# Check if user provided IP or domain name
+function check_if_domain()  {
+    if [[ "$TARGET" =~ ^[a-z] ]]; then
+    return 1
+    else
+    return 0
+    fi
+}
+
 # Open Port Scan
 nmap_open_port() {
     echo "Finding Open Ports..."
@@ -65,16 +74,20 @@ service_scan() {
 }
 
 # Exporting domain name
-domain_scan() {
+function domain_scan() {
+    echo "Finding domain for $TARGET..."
     domain_name=$(whatweb "$TARGET" --no-error | sed -n 's|.*http[s]\?://\([a-zA-Z0-9.-]\+\).*|\1|p' | uniq)
     
     if [ -z "$domain_name" ]; then
         echo "No domain name found."
-        return
+        return 0
+    else
+        echo "Domain name found: $domain_name"
+        return 1
     fi
+}
 
-    echo "Domain name found: $domain_name"
-
+update_host_file() {
     echo "Do you want to add the domain to the hosts file? (yes/no)"
     read -r answer
     if [ "$answer" == "yes" ]; then
@@ -85,8 +98,43 @@ domain_scan() {
     fi
 }
 
+# Scanning for sub-domain
+scan_subdomain() {
+    echo "Do you want to perform subdomain scan? (yes/no)"
+    read -r answer
+
+    if [[ "$answer" == "yes" ]]; then
+        echo "Running sublist3r..."
+        sublist3r -n -d mitblrfest.org | grep -Eo '([a-zA-Z0-9_-]+\.)+[a-zA-Z]{2,}' | tee ./subdomain.txt || {
+            echo "sublist3r not found!"
+        }
+        echo "Fuzzing subdomains..."
+        wfuzz -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -u "$domain_name" -H "Host: FUZZ.$domain_name" -f ./.wfuzz_subdomains.txt --sc 200,301 || {
+            echo "wfuzz not found!"
+        }
+        < ./.wfuzz_subdomains.txt cut -d '"' -f 2 | grep -Ev '[0-9]|[ ]|=' | sed '/^$/d' | sed "s/.*/&.$domain_name/" | tee -a ./subdomain.txt
+        < subdomain.txt uniq | tee subdomain.txt
+
+    else
+        echo "Service scan canceled."
+    fi
+}
+
 display_names
 check_sudo
 nmap_open_port
 service_scan
-domain_scan
+
+if(check_if_domain eq 0); then
+    domain_scan
+fi
+
+if(scan_subdomain eq 1); then
+    update_host_file
+fi
+
+if(check_if_domain eq 1); then
+    scan_subdomain
+else
+    echo ""
+fi
